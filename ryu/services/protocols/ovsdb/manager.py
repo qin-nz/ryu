@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import netaddr
 import ssl
 import socket
 
@@ -90,8 +91,10 @@ class OVSDB(app_manager.RyuApp):
                 sock.shutdown(socket.SHUT_RDWR)
                 sock.close()
                 continue
-
-            self.logger.debug('New connection from %s:%s' % client_address)
+            if netaddr.valid_ipv6(client_address[0]):
+                self.logger.debug('New connection from [%s]:%s' % client_address[:2])
+            else:
+                self.logger.debug('New connection from %s:%s' % client_address)
             t = hub.spawn(self._start_remote, sock, client_address)
             self.threads.append(t)
 
@@ -158,7 +161,11 @@ class OVSDB(app_manager.RyuApp):
             sock.close()
 
     def start(self):
-        server = hub.listen((self._address, self._port))
+        if netaddr.valid_ipv6(self._address):
+            server = hub.listen((self._address, self._port),
+                                family=socket.AF_INET6)
+        else:
+            server = hub.listen((self._address, self._port))
         key = self.CONF.ovsdb.mngr_privkey or self.CONF.ctl_privkey
         cert = self.CONF.ovsdb.mngr_cert or self.CONF.ctl_cert
 
@@ -173,8 +180,12 @@ class OVSDB(app_manager.RyuApp):
 
         self._server = server
 
-        self.logger.info('Listening on %s:%s for clients' % (self._address,
-                                                             self._port))
+        if netaddr.valid_ipv6(self._address):
+            self.logger.info('Listening on [%s]:%s for clients',
+                             self._address, self._port)
+        else:
+            self.logger.info('Listening on %s:%s for clients',
+                             self._address, self._port)
         t = hub.spawn(self._accept, self._server)
         super(OVSDB, self).start()
         return t
